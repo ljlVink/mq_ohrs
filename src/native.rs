@@ -16,9 +16,9 @@ pub(crate) struct NativeDisplayData {
     pub high_dpi: bool,
     pub quit_requested: bool,
     pub quit_ordered: bool,
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     pub native_requests: Box<dyn Fn(Request) + Send>,
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     pub native_requests: mpsc::Sender<Request>,
     pub clipboard: Box<dyn Clipboard>,
     pub dropped_files: DroppedFiles,
@@ -40,8 +40,8 @@ impl NativeDisplayData {
     pub fn new(
         screen_width: i32,
         screen_height: i32,
-        #[cfg(target_os = "android")] native_requests: Box<dyn Fn(Request) + Send>,
-        #[cfg(not(target_os = "android"))] native_requests: mpsc::Sender<Request>,
+        #[cfg(any(target_os = "android", target_env = "ohos"))] native_requests: Box<dyn Fn(Request) + Send>,
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))] native_requests: mpsc::Sender<Request>,
         clipboard: Box<dyn Clipboard>,
     ) -> NativeDisplayData {
         NativeDisplayData {
@@ -83,12 +83,31 @@ pub trait Clipboard: Send + Sync {
     fn set(&mut self, string: &str);
 }
 
+// Default clipboard implementation
+pub struct DefaultClipboard;
+
+impl DefaultClipboard {
+    pub fn new() -> DefaultClipboard {
+        DefaultClipboard
+    }
+}
+
+impl Clipboard for DefaultClipboard {
+    fn get(&mut self) -> Option<String> {
+        None
+    }
+
+    fn set(&mut self, _data: &str) {
+        // Do nothing
+    }
+}
+
 pub mod module;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux",not(target_env = "ohos")))]
 pub mod linux_x11;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux",not(target_env = "ohos")))]
 pub mod linux_wayland;
 
 #[cfg(target_os = "android")]
@@ -99,6 +118,12 @@ pub mod windows;
 
 #[cfg(target_os = "android")]
 pub use android::*;
+
+#[cfg(target_env = "ohos")]
+pub mod ohos;
+
+#[cfg(target_env = "ohos")]
+pub use ohos::*;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;

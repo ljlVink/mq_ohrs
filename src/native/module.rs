@@ -13,7 +13,7 @@ impl Display for Error {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_env = "ohos"))]
 pub mod linux {
     use super::Error;
     use libc::{dlclose, dlopen, dlsym, RTLD_LAZY, RTLD_LOCAL};
@@ -90,7 +90,7 @@ mod windows {
 
 use std::fmt::Display;
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_env = "ohos"))]
 pub use linux::*;
 
 #[cfg(target_os = "windows")]

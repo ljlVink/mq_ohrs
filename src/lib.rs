@@ -7,6 +7,9 @@
     clippy::missing_safety_doc
 )]
 
+use napi_derive_ohos::napi;
+use napi_ohos::{bindgen_prelude::Object, Env, Result};
+
 pub mod conf;
 mod event;
 pub mod fs;
@@ -216,8 +219,7 @@ pub mod window {
             (d.native_requests)(native::Request::SetCursorGrab(grab));
         }
 
-        #[cfg(not(target_os = "android"))]
-        {
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
             d.native_requests
                 .send(native::Request::SetCursorGrab(grab))
                 .unwrap();
@@ -236,7 +238,7 @@ pub mod window {
             (d.native_requests)(native::Request::ScheduleUpdate);
         }
 
-        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android",target_env = "ohos")))]
         {
             let d = native_display().lock().unwrap();
             d.native_requests
@@ -258,8 +260,8 @@ pub mod window {
             (d.native_requests)(native::Request::ShowMouse(shown));
         }
 
-        #[cfg(not(target_os = "android"))]
-        {
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+         {
             d.native_requests
                 .send(native::Request::ShowMouse(shown))
                 .unwrap();
@@ -274,8 +276,7 @@ pub mod window {
             (d.native_requests)(native::Request::SetMouseCursor(cursor_icon));
         }
 
-        #[cfg(not(target_os = "android"))]
-        {
+ #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
             d.native_requests
                 .send(native::Request::SetMouseCursor(cursor_icon))
                 .unwrap();
@@ -293,8 +294,7 @@ pub mod window {
             });
         }
 
-        #[cfg(not(target_os = "android"))]
-        {
+ #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
             d.native_requests
                 .send(native::Request::SetWindowSize {
                     new_width,
@@ -311,8 +311,7 @@ pub mod window {
             (d.native_requests)(native::Request::SetWindowPosition { new_x, new_y });
         }
 
-        #[cfg(not(target_os = "android"))]
-        {
+ #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
             d.native_requests
                 .send(native::Request::SetWindowPosition { new_x, new_y })
                 .unwrap();
@@ -334,8 +333,7 @@ pub mod window {
             (d.native_requests)(native::Request::SetFullscreen(fullscreen));
         }
 
-        #[cfg(not(target_os = "android"))]
-        {
+ #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
             d.native_requests
                 .send(native::Request::SetFullscreen(fullscreen))
                 .unwrap();
@@ -375,8 +373,8 @@ pub mod window {
             (d.native_requests)(native::Request::ShowKeyboard(show));
         }
 
-        #[cfg(not(target_os = "android"))]
-        {
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+         {
             d.native_requests
                 .send(native::Request::ShowKeyboard(show))
                 .unwrap();
@@ -421,7 +419,11 @@ pub fn start<F>(conf: conf::Conf, f: F)
 where
     F: 'static + FnOnce() -> Box<dyn EventHandler>,
 {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_env = "ohos")]
+    unsafe {
+        native::ohos::run(conf, f);
+    }
+    #[cfg(all(target_os = "linux",not(target_env = "ohos")))]
     {
         let mut f = Some(f);
         let f = &mut f;
@@ -472,4 +474,23 @@ where
     unsafe {
         native::ios::run(conf, f);
     }
+
+}
+#[cfg(target_env = "ohos")]
+extern "C" {
+    fn quad_main();
+}
+
+static mut OHOS_EXPORTS: Option<Object<'static>> = None;
+static mut OHOS_ENV: Option<Env> = None;
+
+#[cfg(target_env = "ohos")]
+#[napi(module_exports)] //ignore this error ,this is a napi bug.
+pub fn init(exports: Object, env: Env) -> Result<()> {
+    unsafe {
+        OHOS_EXPORTS = Some(std::mem::transmute(exports));
+        OHOS_ENV = Some(env);
+        quad_main();
+    }
+    Ok(())
 }
