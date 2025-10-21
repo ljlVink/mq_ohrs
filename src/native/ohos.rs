@@ -100,7 +100,9 @@ impl MainThreadState {
         );
 
         if self.surface.is_null() {
-            hilog_fatal!("Failed to create EGL window surface");
+            let error = (self.libegl.eglGetError)();
+            hilog_fatal!(format!("Failed to create EGL window surface, EGL error: {}", error));
+            // Additional debugging information
             return;
         }
 
@@ -113,7 +115,8 @@ impl MainThreadState {
         );
 
         if res == 0 {
-            hilog_fatal!("Failed to make EGL context current");
+            let error = (self.libegl.eglGetError)();
+            hilog_fatal!(format!("Failed to make EGL context current, EGL error: {}", error));
         } else {
             hilog_info!("EGL context made current successfully");
         }
@@ -135,6 +138,9 @@ impl MainThreadState {
                     d.screen_height = height as _;
                 }
                 self.event_handler.resize_event(width as _, height as _);
+                if self.surface.is_null() {
+                    hilog_info!("Received SurfaceChanged but no surface exists yet");
+                }
             }
             Message::Touch {
                 phase,
@@ -185,24 +191,23 @@ impl MainThreadState {
     }
 
     fn frame(&mut self) {
-        hilog_info!("Frame rendering started");
         self.event_handler.update();
 
-        if self.surface.is_null() == false {
+        if !self.surface.is_null() {
             self.update_requested = false;
             self.event_handler.draw();
 
             unsafe {
-                hilog_info!("Swapping buffers");
+                //hilog_info!("Swapping buffers");
                 let result = (self.libegl.eglSwapBuffers)(self.egl_display, self.surface);
                 if result == 0 {
-                    hilog_fatal!("Failed to swap buffers");
+                    //hilog_fatal!("Failed to swap buffers");
                 } else {
-                    hilog_info!("Buffers swapped successfully");
+                    //hilog_info!("Buffers swapped successfully");
                 }
             }
         } else {
-            hilog_info!("Skipping frame render - surface is null");
+            //hilog_info!("Skipping frame render - surface is null");
         }
     }
 
@@ -246,9 +251,7 @@ where
     let tx2 = tx.clone();
     MESSAGES_TX.with(move |messages_tx| *messages_tx.borrow_mut() = Some(tx2));
     thread::spawn(move || {
-        hilog_info!("Starting event loop");
         let mut libegl = LibEgl::try_load().expect("Cant load LibEGL");
-
         // skip all the messages until android will be able to actually open a window
         //
         // sometimes before launching an app android will show a permission dialog
@@ -256,7 +259,6 @@ where
         let window = 'a: loop {
             match rx.try_recv() {
                 Ok(Message::SurfaceCreated { window }) => {
-                    hilog_info!("Message::SurfaceCreated");
                     break 'a window;
                 }
                 _ => {}
@@ -270,11 +272,10 @@ where
                 _ => {}
             }
         };
-
         let (egl_context, egl_config, egl_display) = crate::native::egl::create_egl_context(
             &mut libegl,
             std::ptr::null_mut(), /* EGL_DEFAULT_DISPLAY */
-            conf.platform.framebuffer_alpha,
+            true,
             conf.sample_count,
         )
         .expect("Cant create EGL context");
@@ -313,7 +314,7 @@ where
             egl_config,
             egl_context,
             surface,
-            window,
+            window: WindowRaw(std::ptr::null_mut()), // Will be set when we create the surface
             event_handler,
             quit: false,
             fullscreen: conf.fullscreen,
@@ -325,6 +326,13 @@ where
                 logo: false,
             },
         };
+        unsafe {
+            s.update_surface(window);
+            if s.surface.is_null() {
+                hilog_fatal!("Failed to create initial EGL surface");
+                return;
+            }
+        }
 
         while !s.quit {
             let block_on_wait = conf.platform.blocking_event_loop && !s.update_requested;
@@ -342,7 +350,8 @@ where
                 }
             }
 
-            if !conf.platform.blocking_event_loop || s.update_requested {
+            // Only render if we have a valid surface or if update is requested
+            if !s.surface.is_null() && (!conf.platform.blocking_event_loop || s.update_requested) {
                 s.frame();
             }
 
@@ -364,16 +373,20 @@ where
         hilog_info!("xcomponent_create");
         hilog_info!(format!("Window created: {:?}", win));
         send_message(Message::SurfaceCreated { window: win });
+        let sz = xcomponent.size(win)?;
+        let width = sz.width as i32;
+        let height = sz.height as i32;
+        hilog_info!(format!("manual change window: {:?} {:?}", width,height));
+        send_message(Message::SurfaceChanged { width, height });
         Ok(())
     });
 
-    xcomponent.on_surface_changed(|_xcomponent, win| {
+    xcomponent.on_surface_changed(|xcomponent, win| {
         hilog_info!("xcomponent_changed");
-        // Get the window dimensions
-        // TODO: We need to extract width and height from win parameter
-        // For now, let's use placeholder values to test
-        let width = 800;  // Placeholder
-        let height = 600; // Placeholder
+        // Get the window dimensions properly
+        let sz = xcomponent.size(win)?;
+        let width = sz.width as i32;
+        let height = sz.height as i32;
         hilog_info!(format!("Surface changed: {}x{}", width, height));
         send_message(Message::SurfaceChanged { width, height });
         Ok(())
