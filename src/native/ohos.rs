@@ -1,6 +1,4 @@
-use napi_ohos::{bindgen_prelude::Object, Env, Result};
 use ohos_xcomponent_binding::{XComponent,WindowRaw};
-use std::sync::Once;
 use ohos_hilog_binding::{hilog_fatal, hilog_info};
 use crate::{
     event::{EventHandler, KeyCode, KeyMods, TouchPhase},
@@ -85,13 +83,10 @@ impl MainThreadState {
     }
 
     unsafe fn update_surface(&mut self, window: WindowRaw) {
-        hilog_info!("Updating surface");
         self.window = window;
         if self.surface.is_null() == false {
             self.destroy_surface();
         }
-
-        hilog_info!(format!("Creating window surface with window: {:?}", window));
         self.surface = (self.libegl.eglCreateWindowSurface)(
             self.egl_display,
             self.egl_config,
@@ -105,8 +100,6 @@ impl MainThreadState {
             // Additional debugging information
             return;
         }
-
-        hilog_info!("Making EGL context current");
         let res = (self.libegl.eglMakeCurrent)(
             self.egl_display,
             self.surface,
@@ -117,8 +110,6 @@ impl MainThreadState {
         if res == 0 {
             let error = (self.libegl.eglGetError)();
             hilog_fatal!(format!("Failed to make EGL context current, EGL error: {}", error));
-        } else {
-            hilog_info!("EGL context made current successfully");
         }
     }
 
@@ -192,22 +183,13 @@ impl MainThreadState {
 
     fn frame(&mut self) {
         self.event_handler.update();
-
         if !self.surface.is_null() {
             self.update_requested = false;
             self.event_handler.draw();
-
             unsafe {
-                //hilog_info!("Swapping buffers");
-                let result = (self.libegl.eglSwapBuffers)(self.egl_display, self.surface);
-                if result == 0 {
-                    //hilog_fatal!("Failed to swap buffers");
-                } else {
-                    //hilog_info!("Buffers swapped successfully");
-                }
+                (self.libegl.eglSwapBuffers)(self.egl_display, self.surface);
+                
             }
-        } else {
-            //hilog_info!("Skipping frame render - surface is null");
         }
     }
 
@@ -219,10 +201,10 @@ impl MainThreadState {
                 self.update_requested = true;
             }
             SetFullscreen(fullscreen) => {
-                // TODO: Implement fullscreen functionality
+                
             }
             ShowKeyboard(show) => {
-                // TODO: Implement keyboard functionality
+                
             }
             _ => {}
         }
@@ -236,7 +218,6 @@ where
     let env = OHOS_ENV.as_ref().expect("OHOS_ENV is not initialized");
     let exports = OHOS_EXPORTS.as_ref().expect("OHOS_EXPORTS is not initialized");
     let xcomponent = XComponent::init(*env, *exports).expect("Failed to initialize XComponent");
-    
     use std::panic;
     panic::set_hook(Box::new(|info|{
         hilog_fatal!(info)
@@ -275,7 +256,7 @@ where
         let (egl_context, egl_config, egl_display) = crate::native::egl::create_egl_context(
             &mut libegl,
             std::ptr::null_mut(), /* EGL_DEFAULT_DISPLAY */
-            true,
+            true, // force set rgba 8888 for ohos
             conf.sample_count,
         )
         .expect("Cant create EGL context");
@@ -370,58 +351,49 @@ where
     });
     
     xcomponent.on_surface_created(|xcomponent, win: WindowRaw| {
-        hilog_info!("xcomponent_create");
-        hilog_info!(format!("Window created: {:?}", win));
         send_message(Message::SurfaceCreated { window: win });
         let sz = xcomponent.size(win)?;
         let width = sz.width as i32;
         let height = sz.height as i32;
-        hilog_info!(format!("manual change window: {:?} {:?}", width,height));
         send_message(Message::SurfaceChanged { width, height });
         Ok(())
     });
 
     xcomponent.on_surface_changed(|xcomponent, win| {
-        hilog_info!("xcomponent_changed");
-        // Get the window dimensions properly
         let sz = xcomponent.size(win)?;
         let width = sz.width as i32;
         let height = sz.height as i32;
-        hilog_info!(format!("Surface changed: {}x{}", width, height));
         send_message(Message::SurfaceChanged { width, height });
         Ok(())
     });
 
     xcomponent.on_surface_destroyed(|_xcomponent, _win| {
-        hilog_info!("xcomponent_destroy");
+        
         send_message(Message::SurfaceDestroyed);
         Ok(())
     });
 
     xcomponent.on_touch_event(|_xcomponent, _win, data| {
-        hilog_info!("xcomponent_dispatch");
-        hilog_info!(format!("xcomponent_dispatch: {:?}", data));
-        
-        // Send touch events to main thread
-        // TODO: Properly handle touch data when we know the structure
-        /*
-        if let Some(touch) = data.first() {
+        if let Some(touch_point) = data.touch_points.first() {
+            let phase = match data.event_type {
+                ohos_xcomponent_binding::TouchEvent::Down => TouchPhase::Started,
+                ohos_xcomponent_binding::TouchEvent::Up => TouchPhase::Ended,
+                ohos_xcomponent_binding::TouchEvent::Move => TouchPhase::Moved,
+                ohos_xcomponent_binding::TouchEvent::Cancel => TouchPhase::Cancelled,
+                _ => TouchPhase::Cancelled, // Default to cancelled for unknown events
+            };
             send_message(Message::Touch {
-                phase: TouchPhase::Moved, // TODO: Map properly based on touch data
-                touch_id: touch.id as u64,
-                x: touch.x,
-                y: touch.y,
+                phase,
+                touch_id: touch_point.id as u64,
+                x: touch_point.x,
+                y: touch_point.y,
             });
         }
-        */
         Ok(())
     });
-
     xcomponent.register_callback();
 
     xcomponent.on_frame_callback(|_, _, _| {
-        //hilog_info!("xcomponent_frame");
-        // Process pending messages in frame callback
         Ok(())
     });
 
