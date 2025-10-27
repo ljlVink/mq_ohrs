@@ -1,5 +1,6 @@
 #[cfg(target_os = "ios")]
 use crate::native::ios;
+use crate::native::ohos;
 
 #[derive(Debug)]
 pub enum Error {
@@ -45,9 +46,13 @@ pub fn load_file<F: Fn(Response) + 'static>(path: &str, on_loaded: F) {
     #[cfg(target_os = "ios")]
     ios::load_file(path, on_loaded);
 
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
+    #[cfg(target_env = "ohos")]
+    ohos::load_file(path, on_loaded);
+
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios", target_env = "ohos")))]
     load_file_desktop(path, on_loaded);
 }
+
 
 #[cfg(target_os = "android")]
 fn load_file_android<F: Fn(Response)>(path: &str, on_loaded: F) {

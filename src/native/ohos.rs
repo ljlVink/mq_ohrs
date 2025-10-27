@@ -411,3 +411,19 @@ impl crate::native::Clipboard for OHOSClipboard {
         // TODO: Implement clipboard set functionality
     }
 }
+
+
+pub fn load_file<F: Fn(crate::fs::Response) + 'static>(path: &str, on_loaded: F) {
+    let response = load_file_sync(path);
+    on_loaded(response);
+}
+
+fn load_file_sync(path: &str) -> crate::fs::Response {
+    use std::fs::File;
+    use std::io::Read;
+    let full_path: String = format!("/data/storage/el1/bundle/entry/resources/resfile/{}", path);    
+    let mut response = vec![];
+    let mut file = File::open(&full_path)?;
+    file.read_to_end(&mut response)?;
+    Ok(response)
+}
