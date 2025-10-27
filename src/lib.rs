@@ -232,7 +232,7 @@ pub mod window {
     ///
     /// Does nothing without `conf.platform.blocking_event_loop`.
     pub fn schedule_update() {
-        #[cfg(all(target_os = "android", not(target_arch = "wasm32")))]
+        #[cfg(all(any(target_os = "android",target_env = "ohos"), not(target_arch = "wasm32")))]
         {
             let d = native_display().lock().unwrap();
             (d.native_requests)(native::Request::ScheduleUpdate);
@@ -276,7 +276,7 @@ pub mod window {
             (d.native_requests)(native::Request::SetMouseCursor(cursor_icon));
         }
 
- #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
             d.native_requests
                 .send(native::Request::SetMouseCursor(cursor_icon))
                 .unwrap();
@@ -294,7 +294,7 @@ pub mod window {
             });
         }
 
- #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
             d.native_requests
                 .send(native::Request::SetWindowSize {
                     new_width,
@@ -311,7 +311,7 @@ pub mod window {
             (d.native_requests)(native::Request::SetWindowPosition { new_x, new_y });
         }
 
- #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
             d.native_requests
                 .send(native::Request::SetWindowPosition { new_x, new_y })
                 .unwrap();
@@ -320,7 +320,7 @@ pub mod window {
 
     /// Get the position of the window.
     /// TODO: implement for other platforms
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(any(target_os = "windows", all(target_os = "linux", not(target_env = "ohos"))))]
     pub fn get_window_position() -> (u32, u32) {
         let d = native_display().lock().unwrap();
         d.screen_position
@@ -332,8 +332,8 @@ pub mod window {
         {
             (d.native_requests)(native::Request::SetFullscreen(fullscreen));
         }
-
- #[cfg(not(any(target_os = "android", target_env = "ohos")))]        {
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]        
+        {
             d.native_requests
                 .send(native::Request::SetFullscreen(fullscreen))
                 .unwrap();
@@ -476,6 +476,7 @@ where
     }
 
 }
+
 #[cfg(target_env = "ohos")]
 extern "C" {
     fn quad_main();
