@@ -1,5 +1,9 @@
 use ohos_xcomponent_binding::{XComponent,WindowRaw};
-use ohos_hilog_binding::{hilog_fatal, hilog_info};
+use ohos_xcomponent_sys::{
+    OH_NativeXComponent,OH_NativeXComponent_RegisterKeyEventCallback, OH_NativeXComponent_GetKeyEvent, OH_NativeXComponent_GetKeyEventAction,
+    OH_NativeXComponent_GetKeyEventCode
+};
+use ohos_hilog_binding::{hilog_error, hilog_fatal, hilog_info};
 use crate::{
     event::{EventHandler, KeyCode, KeyMods, TouchPhase},
     native::{
@@ -7,9 +11,9 @@ use crate::{
         NativeDisplayData,
     },
 };
+mod keycodes;
 
 use crate::{OHOS_ENV, OHOS_EXPORTS};
-
 use std::{cell::RefCell, sync::mpsc, thread};
 
 #[derive(Debug)]
@@ -210,6 +214,49 @@ impl MainThreadState {
         }
     }
 }
+fn register_xcomponent_callbacks(xcomponent: &XComponent) -> napi_ohos::Result<()> {
+    let nativeXComponent = xcomponent.raw();
+    let res = unsafe {
+        OH_NativeXComponent_RegisterKeyEventCallback(nativeXComponent, Some(on_dispatch_key_event))
+    };
+    if res != 0 {
+        hilog_error!("Failed to register key event callbacks");
+    } else {
+        hilog_error!("Registered key event callbacks successfully");
+    }
+
+    Ok(())
+}
+
+pub unsafe extern "C" fn on_dispatch_key_event(
+    xcomponent: *mut OH_NativeXComponent,
+    window: *mut std::os::raw::c_void,
+)
+{
+    hilog_info!("DispatchKeyEvent");
+    let mut event = std::ptr::null_mut();
+    let ret = OH_NativeXComponent_GetKeyEvent(xcomponent, &mut event);
+    assert!(ret == 0, "Get key event failed");
+
+    let mut action = 0;
+    let ret = OH_NativeXComponent_GetKeyEventAction(event, &mut action);
+    assert!(ret == 0, "Get key event action failed");
+
+    let mut code = 0;
+    let ret = OH_NativeXComponent_GetKeyEventCode(event, &mut code);
+    assert!(ret == 0, "Get key event code failed");
+
+    let keycode = keycodes::translate_keycode(code);
+    hilog_info!("DispatchKeyEvent: {:?}, action: {:?}, keycode = {:?}", keycode, action, code);
+    if(action == 0){
+        //down
+        send_message(Message::KeyDown { keycode });
+    }
+    else if (action == 1){
+        //up
+        send_message(Message::KeyUp { keycode });
+    }
+}
 
 pub unsafe fn run<F>(conf: crate::conf::Conf, f: F)
 where
@@ -222,7 +269,7 @@ where
     panic::set_hook(Box::new(|info|{
         hilog_fatal!(info)
     }));
-
+    register_xcomponent_callbacks(&xcomponent);
     struct SendHack<F>(F);
     unsafe impl<F> Send for SendHack<F> {}
     let f = SendHack(f);
